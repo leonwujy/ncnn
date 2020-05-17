@@ -54,8 +54,10 @@ Net::~Net()
 }
 
 #if NCNN_STRING
+//用字符串检索自定义层
 int Net::register_custom_layer(const char* type, layer_creator_func creator)
 {
+    //通过层名检索层编号，需要先添加自定义层后cmake，从而在layer_registry.h.in文件中注册
     int typeindex = layer_to_index(type);
     if (typeindex != -1)
     {
@@ -63,13 +65,14 @@ int Net::register_custom_layer(const char* type, layer_creator_func creator)
         return -1;
     }
 
+    //检查自定义层列表，若不存在该层名，则创建该层；
     int custom_index = custom_layer_to_index(type);
     if (custom_index == -1)
     {
         struct layer_registry_entry entry = { type, creator };
         custom_layer_registry.push_back(entry);
     }
-    else
+    else //若已存在该层，则复写该层
     {
         fprintf(stderr, "overwrite existing custom layer type %s\n", type);
         custom_layer_registry[custom_index].name = type;
@@ -82,6 +85,7 @@ int Net::register_custom_layer(const char* type, layer_creator_func creator)
 
 int Net::register_custom_layer(int index, layer_creator_func creator)
 {
+    //判断第8位是为0，若是，则该index不是有效的自定义层序号
     int custom_index = index & ~LayerType::CustomBit;
     if (index == custom_index)
     {
@@ -96,9 +100,11 @@ int Net::register_custom_layer(int index, layer_creator_func creator)
 #else
         struct layer_registry_entry dummy = { 0 };
 #endif // NCNN_STRING
+        //扩容并添加新层
         custom_layer_registry.resize(custom_index + 1, dummy);
     }
 
+    //执行层创建函数
     if (custom_layer_registry[custom_index].creator)
     {
         fprintf(stderr, "overwrite existing custom layer index %d\n", custom_index);
@@ -109,6 +115,7 @@ int Net::register_custom_layer(int index, layer_creator_func creator)
 }
 
 #if NCNN_STRING
+//载入网络参数
 int Net::load_param(const DataReader& dr)
 {
 #define SCAN_VALUE(fmt, v) \
@@ -118,6 +125,7 @@ int Net::load_param(const DataReader& dr)
         return -1; \
     }
 
+    //读入参数版本号
     int magic = 0;
     SCAN_VALUE("%d", magic)
     if (magic != 7767517)
@@ -127,6 +135,7 @@ int Net::load_param(const DataReader& dr)
     }
 
     // parse
+    //读取层数和数据包数量
     int layer_count = 0;
     int blob_count = 0;
     SCAN_VALUE("%d", layer_count)
@@ -137,6 +146,7 @@ int Net::load_param(const DataReader& dr)
         return -1;
     }
 
+    //创建空间
     layers.resize((size_t)layer_count);
     blobs.resize((size_t)blob_count);
 
@@ -166,16 +176,20 @@ int Net::load_param(const DataReader& dr)
         char layer_name[256];
         int bottom_count = 0;
         int top_count = 0;
+        //依次读入层数据
         SCAN_VALUE("%255s", layer_type)
         SCAN_VALUE("%255s", layer_name)
         SCAN_VALUE("%d", bottom_count)
         SCAN_VALUE("%d", top_count)
 
+        //尝试创建标准层
         Layer* layer = create_layer(layer_type);
         if (!layer)
         {
+            //尝试创建用户自定义层
             layer = create_custom_layer(layer_type);
         }
+        //判断是否创建成功
         if (!layer)
         {
             fprintf(stderr, "layer %s not exists or registered\n", layer_type);
@@ -187,19 +201,22 @@ int Net::load_param(const DataReader& dr)
         if (opt.use_vulkan_compute)
             layer->vkdev = vkdev;
 #endif // NCNN_VULKAN
-
+        //初始化层类型、层名称
         layer->type = std::string(layer_type);
         layer->name = std::string(layer_name);
 //         fprintf(stderr, "new layer %d %s\n", i, layer_name);
 
         layer->bottoms.resize(bottom_count);
-
+        //扫描本层的所有输入层
         for (int j=0; j<bottom_count; j++)
         {
             char bottom_name[256];
             SCAN_VALUE("%255s", bottom_name)
 
+            //找到对应名称的index编号
             int bottom_blob_index = find_blob_index_by_name(bottom_name);
+            
+            //如果未找到，则将当前blob序号创建为输入层
             if (bottom_blob_index == -1)
             {
                 Blob& blob = blobs[blob_index];
@@ -212,13 +229,17 @@ int Net::load_param(const DataReader& dr)
                 blob_index++;
             }
 
+            //载入对应的blob
             Blob& blob = blobs[bottom_blob_index];
 
+            //在该blob中记录其被几号层所引用
             blob.consumers.push_back(i);
 
+            //在本层中记录输入blob的index序号
             layer->bottoms[j] = bottom_blob_index;
         }
 
+        //扫描输出层信息
         layer->tops.resize(top_count);
         for (int j=0; j<top_count; j++)
         {
@@ -227,17 +248,21 @@ int Net::load_param(const DataReader& dr)
             char blob_name[256];
             SCAN_VALUE("%255s", blob_name)
 
+            //创建输出层
             blob.name = std::string(blob_name);
 //             fprintf(stderr, "new blob %s\n", blob_name);
 
+            //记录创建该blob的层的index序号
             blob.producer = i;
 
+            //记录本层的输出blob的index序号
             layer->tops[j] = blob_index;
 
             blob_index++;
         }
 
         // layer specific params
+        // 层的特殊参数
         int pdlr = pd.load_param(dr);
         if (pdlr != 0)
         {
@@ -246,15 +271,19 @@ int Net::load_param(const DataReader& dr)
         }
 
         // pull out top shape hints
+        // 取出输出层形状提示
         Mat shape_hints = pd.get(30, Mat());
         if (!shape_hints.empty())
         {
             const int* psh = shape_hints;
+            //遍历所有的输出层
             for (int j=0; j<top_count; j++)
             {
                 Blob& blob = blobs[layer->tops[j]];
 
+                //从第0位上取出数据维度，最多三维
                 int dims = psh[0];
+                //分情况初始化
                 if (dims == 1)
                 {
                     blob.shape = Mat(psh[1], (void*)0, 4u, 1);
@@ -273,6 +302,7 @@ int Net::load_param(const DataReader& dr)
         }
 
         // set bottom and top shape hints
+        // 设置输入输出层的形状提示
         layer->bottom_shapes.resize(bottom_count);
         for (int j=0; j<bottom_count; j++)
         {
@@ -285,6 +315,7 @@ int Net::load_param(const DataReader& dr)
             layer->top_shapes[j] = blobs[layer->tops[j]].shape;
         }
 
+        //校对层中读取的参数？
         int lr = layer->load_param(pd);
         if (lr != 0)
         {
@@ -300,6 +331,7 @@ int Net::load_param(const DataReader& dr)
 }
 #endif // NCNN_STRING
 
+//读取二进制的参数文件
 int Net::load_param_bin(const DataReader& dr)
 {
 #define READ_VALUE(buf) \
@@ -471,6 +503,7 @@ int Net::load_param_bin(const DataReader& dr)
     return 0;
 }
 
+//读取模型权重
 int Net::load_model(const DataReader& dr)
 {
     if (layers.empty())
@@ -495,6 +528,7 @@ int Net::load_model(const DataReader& dr)
             break;
         }
 
+        //按照每种层实现的方式从文件中读取权重
         int lret = layer->load_model(mb);
         if (lret != 0)
         {
@@ -504,6 +538,7 @@ int Net::load_model(const DataReader& dr)
         }
     }
 
+    //融合网络？
     fuse_network();
 
     for (size_t i=0; i<layers.size(); i++)
@@ -524,6 +559,7 @@ int Net::load_model(const DataReader& dr)
             opt1.use_image_storage = false;
         }
 
+        //执行该类层指定的初始化或预处理操作
         int cret = layer->create_pipeline(opt1);
         if (cret != 0)
         {
@@ -699,9 +735,11 @@ int Net::load_model(AAssetManager* mgr, const char* assetpath)
 int Net::fuse_network()
 {
     // set the int8 op fusion:requantize
+    // 设置int8的操作 重新量化
 #if NCNN_STRING && NCNN_REQUANT    
     // fprintf(stderr, "Test op fusion to int8 implement:\n");
     // parse the network whether is a quantization model
+    // 解析网络是否为一个量化模型
     bool net_quantized = false;
     for (size_t i=0; i<layers.size(); i++)
     {
@@ -716,6 +754,7 @@ int Net::fuse_network()
         }
     }
 
+    // 如果没有量化过的层，则退出
     if (net_quantized == false)
         return 0;
 
@@ -804,6 +843,7 @@ int Net::fuse_network()
                         for (size_t i=0; i<layer_next_2->tops.size(); i++)
                         {
                             int layer_next_3_index = blobs[layer_next_2->tops[i]].consumers[0];
+                            //扫描全卷积标识是否成立
                             if (layers[layer_next_3_index]->type != "Convolution" && layers[layer_next_3_index]->type != "ConvolutionDepthWise" && layers[layer_next_3_index]->type != "PriorBox" )
                             {
                                 // fprintf(stderr, "%s, %s, %s, %s\n", layer->name.c_str(), layer_next->name.c_str(), layer_next_2->name.c_str(), layers[layer_next_3_index]->name.c_str());

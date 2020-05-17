@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <IncludePath>D:\ProgramData\ncnn\build-vs2017\install\include\ncnn;D:\ProgramData\protobuf-3.4.0\build-vs2017\install\include;C:\VulkanSDK\1.2.131.2\Include;C:\VulkanSDK\1.2.131.2\Include\vulkan;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\ProgramData\ncnn\build-vs2017\install\lib;D:\ProgramData\protobuf-3.4.0\build-vs2017\install\lib;C:\VulkanSDK\1.2.131.2\Lib;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies>ncnn.lib;libprotobuf.lib;vulkan-1.lib;VkLayer_utils.lib;shaderc_combined.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup />
+</Project>
