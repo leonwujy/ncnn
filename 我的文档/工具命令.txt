@@ -1,0 +1,23 @@
+#onnx转换ncnn
+./onnx2ncnn dp_detector_sim_10.onnx dp_detector.param dp_detector.bin
+
+#模型优化器 #flag=0代表float32，flag=1代表float16 
+./ncnnoptimize [inparam] [inbin] [outparam] [outbin] [flag] [dataname] [w] [h] [c]
+./ncnnoptimize ./dp_detector.param ./dp_detector.bin ./dp_detector_opt.param ./dp_detector_opt.bin 0
+
+# 创建量化表    # --swapRB 是否需要交换R通道和G通道，待确认
+./ncnn2table --param=dp_detector.param --bin=dp_detector.bin --images=/home/ee/dataset/Parking_Slot/ps2.0/test4quantize/ --output=dp_detector.table --mean=127.5,127.5,127.5 --norm=0.00784314,0.00784314,0.00784314 --size=256,256 --thread=4
+
+./ncnn2table --param=dp_detector_opt.param --bin=dp_detector_opt.bin --images=/home/ee/dataset/Parking_Slot/ps2.0/test4quantize/ --output=dp_detector_opt.table --mean=127.5,127.5,127.5 --norm=0.00784314,0.00784314,0.00784314 --size=256,256 --thread=4
+
+# 创建量化模型
+./ncnn2int8 [inparam] [inbin] [outparam] [outbin] [calibration table]
+
+./ncnn2int8 ./dp_detector.param ./dp_detector.bin ./dp_detector_q.param ./dp_detector_q.bin ./dp_detector.table
+./ncnn2int8 ./dp_detector_opt.param ./dp_detector_opt.bin ./dp_detector_opt_q.param ./dp_detector_opt_q.bin ./dp_detector_opt.table
+
+#模型加密
+./ncnn2mem dp_detector_opt.param dp_detector_opt.bin dp_detector_opt.id.h dp_detector_opt.mem.h
+
+# 创建量化模型
+./ncnn2int8 [inparam] [inbin] [outparam] [outbin] [calibration table]

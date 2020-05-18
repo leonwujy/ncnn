@@ -1,0 +1,4 @@
+出现找不到opencv时，需要在相关cmakelists最前方添加如下内容
+
+set(OpenCV_DIR D:/ProgramData/opencv3.4.2/build)
+include_directories(${OpenCV_DIR}/include)
